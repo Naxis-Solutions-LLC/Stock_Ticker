@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "C:\Users\brian\OneDrive\Documents\Brians work Folder\Stock Tracker\Public\Shared\Stock Screener\stock_detail.py", line 435, in main
+    fetch_ticker_data(ticker)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "C:\Users\brian\OneDrive\Documents\Brians work Folder\Stock Tracker\Public\Shared\Stock Screener\stock_detail.py", line 207, in fetch_ticker_data
+    raise RuntimeError(
+    ...<3 lines>...
+    )
+RuntimeError: No price history for EFOR after 4 attempts. Last cause: Too Many Requests. Rate limited. Try after a while.. This is almost always a Yahoo rate limit -- wait 1-2 minutes and retry.
