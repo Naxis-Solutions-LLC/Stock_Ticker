@@ -6,6 +6,14 @@ Format loosely follows Keep a Changelog. Dates are when the build was cut.
 ## [1.3.2] - 2026-06-16
 
 ### Fixed
+- **"Export failed. Make sure openpyxl is installed" now shows the real error.**
+  The Excel export ran the Python helper without capturing its output and then
+  showed a fixed "install openpyxl" message on *any* non-zero exit -- so a wrong
+  interpreter, a missing `pandas`, a locked output file, or bad data all looked
+  like an openpyxl problem even when openpyxl was installed. The export now
+  captures stdout+stderr, shows the actual Python error and which interpreter
+  was used, saves the full output to `data/export_error.log`, and tells you to
+  `pip install` into *that* interpreter (`"<python>" -m pip install ...`).
 - **Test Trades "Cur Price" no longer shows "-" on a freshly loaded trade.**
   `Recompute-Trades` only ever read the live-price cache, so a trade showed no
   current price (and no P/L) until the first 60-second live refresh completed.

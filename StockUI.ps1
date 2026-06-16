@@ -757,9 +757,12 @@ function Export-ToExcel {
     Set-Status "Building Excel file..."
     try {
         $exportScript = Join-Path $ScriptDir "export_excel.py"
-        $p = Start-Process -FilePath $PythonExe -ArgumentList @($exportScript, $outPath) `
-             -NoNewWindow -Wait -PassThru
-        if ($p.ExitCode -eq 0 -and (Test-Path $outPath)) {
+        # Capture stdout+stderr so a real failure (wrong Python, missing module,
+        # locked output file, bad data) surfaces instead of a misleading
+        # "install openpyxl" message. $LASTEXITCODE holds the script's exit code.
+        $output = & $PythonExe $exportScript $outPath 2>&1
+        $code = $LASTEXITCODE
+        if ($code -eq 0 -and (Test-Path $outPath)) {
             Set-Status "Exported to $outPath"
             $ans = [System.Windows.Forms.MessageBox]::Show(
                 "Exported to:`r`n$outPath`r`n`r`nOpen it now?",
@@ -770,8 +773,16 @@ function Export-ToExcel {
                 Start-Process $outPath
             }
         } else {
-            Set-Status "Export failed (exit $($p.ExitCode))."
-            [System.Windows.Forms.MessageBox]::Show("Export failed. Make sure openpyxl is installed: pip install openpyxl","Export Error") | Out-Null
+            $detail = ($output | Out-String).Trim()
+            $exportLog = Join-Path $DataDir "export_error.log"
+            try { $detail | Out-File -FilePath $exportLog -Encoding UTF8 } catch {}
+            Set-Status "Export failed (exit $code)."
+            $msg = "Export failed (exit $code).`r`n`r`nPython used:`r`n$PythonExe`r`n`r`n"
+            if ($detail) { $msg += "Error from export_excel.py:`r`n$detail`r`n`r`n" }
+            $msg += "If that says a module is missing, install it into THAT Python:`r`n" +
+                    "    `"$PythonExe`" -m pip install openpyxl pandas`r`n`r`n" +
+                    "(Full output saved to data\export_error.log)"
+            [System.Windows.Forms.MessageBox]::Show($msg, "Export Error") | Out-Null
         }
     } catch {
         Set-Status "Export error."

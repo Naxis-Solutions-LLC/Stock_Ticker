@@ -2,6 +2,7 @@
 data/live_prices.csv
 data/screen_status.txt
 data/export_screen.csv
+data/export_error.log
 *.tmp
 
 # Analyze-tab per-ticker scratch (rewritten on every "Analyze" run)
