@@ -3,6 +3,36 @@
 All notable changes to the US Stock Screener are recorded here.
 Format loosely follows Keep a Changelog. Dates are when the build was cut.
 
+## [1.3.2] - 2026-06-16
+
+### Fixed
+- **Test Trades "Cur Price" no longer shows "-" on a freshly loaded trade.**
+  `Recompute-Trades` only ever read the live-price cache, so a trade showed no
+  current price (and no P/L) until the first 60-second live refresh completed.
+  It now goes through `Get-BestPrice`, which prefers the live price but falls
+  back to the screen snapshot, so a price appears immediately -- matching the
+  Screen tab's behaviour.
+- **Atomic saves for `trades.csv` and `pinned.csv`.** Both were written with a
+  non-atomic `File.Copy` (tmp -> destination), which can briefly expose a
+  half-written file to anything reading it. They now swap into place via a new
+  `Move-FileAtomic` helper (`File.Replace` when the target exists, else
+  `File.Move`), matching the atomic `os.replace` the Python scripts already use.
+- **GDI handle leak in the owner-drawn charts.** The Cohorts bar charts and the
+  Analyze price/volume charts created Fonts, Pens, and Brushes on every paint
+  (resize, tab switch, period-button click) and never disposed them, so native
+  GDI handles accumulated over a long session. All chart drawing now disposes
+  its GDI objects in a `finally` block. Shared `[Drawing.Brushes]::*` singletons
+  are deliberately left alone.
+
+### Repo hygiene
+- Removed committed build artifacts and dev leftovers from version control:
+  the `*.zip` distribution packages, the superseded `Stock Screener UI.ps1`,
+  `StockUI-integration-snippets.txt`, `diagnose_dropdowns.ps1`, and the
+  per-ticker Analyze scratch files (`data/detail_*`). Distribution zips are
+  attached on release rather than committed; `.gitignore` now covers `*.zip`
+  and the `data/detail_*` runtime files. The shipped dataset (`screen_data.csv`,
+  `screen_meta.txt`, `trades.csv`) is still tracked so the app works on unzip.
+
 ## [1.3.1] - 2026-05-25
 
 ### Fixed

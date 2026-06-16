@@ -77,6 +77,18 @@ $script:FullJob       = $null
 $script:LastPriceKick = [datetime]::MinValue
 $script:ScrollDebounceSec = 4
 
+# Atomic file replace: write a .tmp first, then swap it into place in a single
+# filesystem operation so a reader never sees a half-written file. On Windows
+# PowerShell 5.1 (.NET Framework) File.Move won't overwrite an existing file,
+# so we use File.Replace when the destination exists (also atomic, same volume).
+function Move-FileAtomic($tmp, $dest) {
+    if (Test-Path $dest) {
+        [System.IO.File]::Replace($tmp, $dest, $null)
+    } else {
+        [System.IO.File]::Move($tmp, $dest)
+    }
+}
+
 # ============================================================
 # Data loading
 # ============================================================
@@ -215,8 +227,7 @@ function Save-Pinned {
         $sw.WriteLine("Ticker")
         foreach ($t in $script:PinnedSet) { $sw.WriteLine($t) }
         $sw.Close()
-        [System.IO.File]::Copy($tmp, $PinnedCsv, $true)
-        Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+        Move-FileAtomic $tmp $PinnedCsv
     } catch { }
 }
 
@@ -526,8 +537,7 @@ function Save-Trades {
             $sw.WriteLine($escaped -join ",")
         }
         $sw.Close()
-        [System.IO.File]::Copy($tmp, $TradesCsv, $true)
-        Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+        Move-FileAtomic $tmp $TradesCsv
         Set-Status "Trades saved $(Get-Date -Format 'HH:mm:ss')."
     } catch {
         Set-Status "Could not save trades: $($_.Exception.Message)"
@@ -791,10 +801,13 @@ function Recompute-Trades {
             $totInv += $inv
         } else { $r.Cells[4].Value = ""; $inv = 0 }
 
-        $live = $script:LivePrices[$tk]
+        # Prefer the live price, but fall back to the screen snapshot so a
+        # freshly loaded trade shows a price immediately instead of "-" until
+        # the first live refresh lands. (Get-BestPrice does live -> snapshot.)
+        $best = Get-BestPrice $tk
         $curPrice = $null
-        if ($live -and $live.Price -ne "" -and $live.Price -ne $null) {
-            $curPrice = [double]$live.Price
+        if ($best -ne $null) {
+            $curPrice = $best.Price
             $r.Cells[5].Value = "{0:N2}" -f $curPrice
         } else {
             $r.Cells[5].Value = "-"
@@ -917,6 +930,11 @@ function Draw-HBarChart {
     $greyPen   = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(200,200,200))
     $gridPen   = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(230,230,230))
 
+    # GDI objects are native handles that the GC frees only on a non-deterministic
+    # finalizer pass. This panel repaints on every resize / tab switch, so without
+    # explicit disposal the handle count climbs over a long session. Dispose in a
+    # finally so every exit path (including the early "no rows" return) cleans up.
+    try {
     # Title
     $g.DrawString($title, $titleFont, $navyBrush, [single]$x, [single]$y)
 
@@ -924,6 +942,7 @@ function Draw-HBarChart {
         $f = New-Object System.Drawing.Font("Segoe UI", 10)
         $b = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::Gray)
         $g.DrawString("(no stocks in this band)", $f, $b, [single]($x + 20), [single]($y + 40))
+        $f.Dispose(); $b.Dispose()
         return
     }
 
@@ -983,6 +1002,11 @@ function Draw-HBarChart {
         $g.DrawString($vstr, $valFont, $blackBrush,
             [single]($plotX + $barW + 4),
             [single]($by + ($barH - $vs.Height) / 2))
+    }
+    } finally {
+        foreach ($d in @($titleFont,$tickFont,$axisFont,$valFont,$navyBrush,$midBrush,$blackBrush,$greyPen,$gridPen)) {
+            if ($d) { $d.Dispose() }
+        }
     }
 }
 
@@ -1538,6 +1562,7 @@ $cohortPanel.Add_Paint({
         $f = New-Object System.Drawing.Font("Segoe UI", 11)
         $b = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::Gray)
         $g.DrawString("No screen data yet. Run a full screen first.", $f, $b, 30, 30)
+        $f.Dispose(); $b.Dispose()
         return
     }
 

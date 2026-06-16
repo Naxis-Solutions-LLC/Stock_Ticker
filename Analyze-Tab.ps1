@@ -583,6 +583,7 @@ function _Az_DrawPriceChart {
         $f = New-Object System.Drawing.Font("Segoe UI", 10)
         $Graphics.DrawString("(no data -- analyze a ticker to begin)",
             $f, [System.Drawing.Brushes]::DimGray, 20, 20)
+        $f.Dispose()
         return
     }
 
@@ -601,10 +602,15 @@ function _Az_DrawPriceChart {
     $yMax += $yRange * 0.03
     $yRange = $yMax - $yMin
 
+    # GDI pens/brushes/fonts are native handles; dispose them on every paint
+    # (this panel repaints on resize, tab switch, and each period-button click)
+    # so a long Analyze session doesn't leak handles. [Drawing.Brushes]::* are
+    # shared singletons and are deliberately NOT disposed.
     $gridPen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(230, 230, 230))
     $axisPen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(180, 180, 180))
     $labelF = New-Object System.Drawing.Font("Segoe UI", 8)
     $labelB = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(110, 110, 110))
+    try {
 
     for ($i = 0; $i -le 5; $i++) {
         $py = $padT + ($h * $i / 5.0)
@@ -667,15 +673,21 @@ function _Az_DrawPriceChart {
     # legend
     $legendF = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
     $lx = $padL + 8; $ly = $padT + 4
-    $Graphics.FillRectangle((New-Object System.Drawing.SolidBrush(
-                [System.Drawing.Color]::FromArgb(31, 119, 180))), $lx, $ly + 3, 14, 3)
+    $lbClose  = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(31, 119, 180))
+    $lbSma50  = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 140, 0))
+    $lbSma200 = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(204, 0, 0))
+    $Graphics.FillRectangle($lbClose, $lx, $ly + 3, 14, 3)
     $Graphics.DrawString("Close", $legendF, [System.Drawing.Brushes]::Black, $lx + 18, $ly - 2)
-    $Graphics.FillRectangle((New-Object System.Drawing.SolidBrush(
-                [System.Drawing.Color]::FromArgb(255, 140, 0))), $lx + 70, $ly + 3, 14, 3)
+    $Graphics.FillRectangle($lbSma50, $lx + 70, $ly + 3, 14, 3)
     $Graphics.DrawString("SMA50", $legendF, [System.Drawing.Brushes]::Black, $lx + 88, $ly - 2)
-    $Graphics.FillRectangle((New-Object System.Drawing.SolidBrush(
-                [System.Drawing.Color]::FromArgb(204, 0, 0))), $lx + 145, $ly + 3, 14, 3)
+    $Graphics.FillRectangle($lbSma200, $lx + 145, $ly + 3, 14, 3)
     $Graphics.DrawString("SMA200", $legendF, [System.Drawing.Brushes]::Black, $lx + 163, $ly - 2)
+    } finally {
+        foreach ($d in @($gridPen, $axisPen, $labelF, $labelB, $closePen,
+                          $sma50Pen, $sma200Pen, $legendF, $lbClose, $lbSma50, $lbSma200)) {
+            if ($d) { $d.Dispose() }
+        }
+    }
 }
 
 function _Az_DrawVolumeChart {
@@ -697,6 +709,7 @@ function _Az_DrawVolumeChart {
     if (-not $vMax -or $vMax -eq 0) { return }
 
     $axisPen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(180, 180, 180))
+    try {
     $Graphics.DrawLine($axisPen, $padL, $padT, $padL, $padT + $h)
     $Graphics.DrawLine($axisPen, $padL, $padT + $h, $padL + $w, $padT + $h)
 
@@ -721,5 +734,10 @@ function _Az_DrawVolumeChart {
         $bx = $padL + ($w * $i / [double]$nRows)
         $by = $padT + $h - $barH
         $Graphics.FillRectangle($volBrush, [float]$bx, [float]$by, [float]$barW, [float]$barH)
+    }
+    } finally {
+        foreach ($d in @($axisPen, $labelF, $labelB, $volBrush)) {
+            if ($d) { $d.Dispose() }
+        }
     }
 }

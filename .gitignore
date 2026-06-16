@@ -4,6 +4,17 @@ data/screen_status.txt
 data/export_screen.csv
 *.tmp
 
+# Analyze-tab per-ticker scratch (rewritten on every "Analyze" run)
+data/detail_summary.csv
+data/detail_history.csv
+data/detail_analysts.csv
+data/detail_earnings.csv
+data/detail_status.txt
+data/detail_error.log
+
+# Distribution packages are attached on release, not committed
+*.zip
+
 # The screen results and user state ARE worth keeping in the shared
 # package so it works out of the box, but in a dev repo you may want
 # to ignore them. Uncomment if so:
