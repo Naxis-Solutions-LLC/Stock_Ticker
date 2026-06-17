@@ -3,6 +3,34 @@
 All notable changes to the US Stock Screener are recorded here.
 Format loosely follows Keep a Changelog. Dates are when the build was cut.
 
+## [1.4.0] - 2026-06-17
+
+### Added
+- **Claude-powered "Analysis" tab.** A new tab sends a ticker to the Anthropic
+  Claude API and shows fresh, fundamental, qualitative research - investment
+  thesis, fundamental strengths, key risks, near-term catalysts, valuation
+  narrative, competitive position, and market sentiment - rather than charts or
+  moving averages. Ticker box, Analyze button, Copy-to-clipboard, status line,
+  and a scrollable results area; Enter submits. The API call runs in a background
+  job polled by a timer, so the UI stays responsive.
+  - `claude_analysis.py` - Python backend on the official `anthropic` SDK. Reads
+    the key from the `ANTHROPIC_API_KEY` environment variable (never hardcoded),
+    prompts Claude as a fundamental equity researcher (known facts only,
+    acknowledge uncertainty, no invented numbers), and uses structured outputs to
+    return exactly 7 fields. Strips markdown fences and parses JSON safely; on any
+    failure writes a clean error object (message + hint + raw response) and exits
+    non-zero. Model id is a constant (`claude-opus-4-8`) with a `--model` override.
+  - `AnalysisTab.ps1` - drop-in WinForms module (`Add-AnalysisTab`), pure ASCII.
+  - `INTEGRATION_GUIDE.md` - API key, setting `ANTHROPIC_API_KEY` on Windows,
+    installing `anthropic`, wiring, rough per-call cost, troubleshooting table.
+  - Right-click a Screen row -> "Ask Claude about {ticker}" opens the tab.
+  - `.gitignore` now excludes `.env` and the regenerated `data/claude_analysis.json`.
+
+### Notes
+- The feature is additive: with no API key set, the rest of the app behaves
+  exactly as before. Requires `pip install anthropic`. Output is qualitative,
+  AI-generated, and not investment advice.
+
 ## [1.3.2] - 2026-06-16
 
 ### Fixed

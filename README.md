@@ -39,10 +39,24 @@ band ($10-25 / $25-40 / $40-60), by distance below the 52-week high (0-10% /
 $5-20B / $20B+). These are drawn directly by the app (no chart component
 dependency) and refresh after each full screen.
 
+**Analysis** (optional, needs a Claude API key) - sends a ticker to the Anthropic
+Claude API and shows fresh, qualitative research: investment thesis, fundamental
+strengths, key risks, near-term catalysts, valuation narrative, competitive
+position, and market sentiment. This is narrative, fundamental research - not
+charts or moving averages. Type a ticker (or right-click a Screen row and pick
+"Ask Claude"), and the result fills in. The feature is additive: with no API key
+set, the rest of the app works exactly as before. Setup (key, environment
+variable, `pip install anthropic`) is in INTEGRATION_GUIDE.md. Output is
+AI-generated and not investment advice.
+
 ## The files
 
   Launch.bat          - Double-click to open the app.
-  StockUI.ps1         - The desktop UI (PowerShell + WinForms, 3 tabs).
+  StockUI.ps1         - The desktop UI (PowerShell + WinForms).
+  Analyze-Tab.ps1     - The per-ticker detail/chart "Analyze" tab module.
+  AnalysisTab.ps1     - The Claude-powered qualitative "Analysis" tab module.
+  claude_analysis.py  - Backend for the Analysis tab (calls the Claude API).
+  INTEGRATION_GUIDE.md - Setup for the Claude Analysis feature.
   screener_full.py    - The slow full-universe screen. Writes data/screen_data.csv.
   price_refresh.py    - The fast live-price pull. Writes data/live_prices.csv.
   trades_init.py      - Creates data/trades.csv on first run.

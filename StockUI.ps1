@@ -1377,13 +1377,23 @@ $miAnalyze.Add_Click({
     & $script:analyzeApi.AnalyzeTicker $script:CtxScreenTicker
 })
 
+# v1.4.0 - "Ask Claude about {ticker}" - opens the Claude Analysis tab.
+$miAskClaude = $screenMenu.Items.Add("Ask Claude...")
+$miAskClaude.Add_Click({
+    if (-not $script:CtxScreenTicker) { return }
+    if (-not $script:analysisApi)     { return }
+    & $script:analysisApi.AnalyzeTicker $script:CtxScreenTicker
+})
+
 # Update the menu text dynamically when it opens so it reads "Analyze AAPL"
 # rather than a generic label. CellMouseDown already populates $script:CtxScreenTicker.
 $screenMenu.Add_Opening({
     if ($script:CtxScreenTicker) {
         $miAnalyze.Text = "Analyze $($script:CtxScreenTicker)"
+        $miAskClaude.Text = "Ask Claude about $($script:CtxScreenTicker)"
     } else {
         $miAnalyze.Text = "Analyze..."
+        $miAskClaude.Text = "Ask Claude..."
     }
 })
 
@@ -1743,6 +1753,28 @@ Your test trades and pinned stocks persist between screen runs.
         $script:analyzeApi = $null
         [System.Windows.Forms.MessageBox]::Show(
             "Failed to load Analyze tab:`r`n$($_.Exception.Message)",
+            "Stock Screener", "OK", "Warning") | Out-Null
+    }
+
+    # ============================================================
+    # v1.4.0 - Build the Claude-powered Analysis tab (additive)
+    # Dot-sources AnalysisTab.ps1 and adds another tab. The returned
+    # $analysisApi.AnalyzeTicker scriptblock is invoked by the right-click
+    # "Ask Claude about this stock" menu item. See INTEGRATION_GUIDE.md.
+    # ============================================================
+    try {
+        . (Join-Path $ScriptDir "AnalysisTab.ps1")
+        $pyForClaude = if ($PythonExe) { $PythonExe } else { "python" }
+        $script:analysisApi = Add-AnalysisTab `
+            -TabControl $tabs `
+            -DataDir    $DataDir `
+            -PythonExe  $pyForClaude `
+            -ScriptDir  $ScriptDir
+    }
+    catch {
+        $script:analysisApi = $null
+        [System.Windows.Forms.MessageBox]::Show(
+            "Failed to load Analysis tab:`r`n$($_.Exception.Message)",
             "Stock Screener", "OK", "Warning") | Out-Null
     }
 
