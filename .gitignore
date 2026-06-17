@@ -16,6 +16,10 @@ data/detail_error.log
 # Distribution packages are attached on release, not committed
 *.zip
 
+# Claude Analysis feature - never commit API keys; temp result is regenerated
+.env
+data/claude_analysis.json
+
 # The screen results and user state ARE worth keeping in the shared
 # package so it works out of the box, but in a dev repo you may want
 # to ignore them. Uncomment if so:
