@@ -3,6 +3,45 @@
 All notable changes to the US Stock Screener are recorded here.
 Format loosely follows Keep a Changelog. Dates are when the build was cut.
 
+## [1.5.0] - 2026-06-17
+
+UX pass implementing the findings in docs/UX_REVIEW.md (P0 -> P2). Additive;
+screener math, CSV formats, and the data layer are unchanged.
+
+### Changed (clarity)
+- **Tab naming.** "Analyze" -> **Chart**, "Analysis" -> **AI Research** (the two
+  were near-homographs). Right-click reads "Chart {ticker}" and "AI research on
+  {ticker}". Tabs are ordered to match the workflow: Screen, Chart, AI Research,
+  Test Trades, Cohorts.
+- **"ALGORITHM SCORECARD" -> "PERFORMANCE"** (there is no algorithm; it is a
+  paper-trading summary).
+- **Human-readable numbers** in the Screen grid: market cap and dollar volume as
+  `$11.3B` / `$827M`, share volume as `41.7M`, prices prefixed with `$`. Display
+  only - underlying values stay numeric for filtering and sorting.
+- **Friendly column headers + tooltips** (no more "Uran", "$Vol M", "3mo Px").
+
+### Added (clarity / effort / accessibility)
+- **Numeric column sort.** Click a header to sort numerically (not lexically);
+  pinned rows stay on top; a sort glyph shows the active column.
+- **Find box** on the Screen filter bar - jump to a ticker in the current view.
+- **Curated columns by default** with a "Show all columns" toggle (under More).
+- **Color-independent signals**: up/down carets on live-price moves and on trade
+  P/L, in addition to the green/pink fill.
+- **Cohorts: "Use current Screen filters"** to restrict the bands to the active
+  filter.
+- **AI Research: approximate per-call cost** line from the returned token usage.
+
+### Changed (confidence / safety)
+- One consistent busy state for live refresh (button disables + "Refreshing...").
+- **Delete-trade confirmation** (was silent + auto-saved with no undo).
+- Autosave made explicit ("Edits save automatically"); Save button -> "Save Now".
+- Freshness/uncertainty surfaced in-app: "Live prices ~15 min delayed" and a
+  not-advice caption on the Chart tab.
+- Consistent universe/runtime numbers (~6,900 tickers, 25-40 min) across the
+  README, the screener, and the in-app dialogs.
+- Launch.bat reframes the console as a "log window (safe to minimize)" instead of
+  a "keep open, don't close" rule.
+
 ## [1.4.0] - 2026-06-17
 
 ### Added

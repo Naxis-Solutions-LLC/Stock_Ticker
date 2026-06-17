@@ -15,7 +15,7 @@ TAGGED (written as columns, filtered in the UI - NOT hard filters):
   - 3-month % change and trend slope                          (#9)
 
 Writes data/screen_data.csv with progress to data/screen_status.txt.
-Takes ~45-60 minutes (pulls history + info per ticker).
+Takes ~25-40 minutes (pulls history + info per ticker, ~6,900 US tickers).
 """
 
 import time

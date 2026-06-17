@@ -59,7 +59,7 @@ function Add-AnalysisTab {
 
     # ----------------------------- tab + top bar
     $tab = New-Object System.Windows.Forms.TabPage
-    $tab.Text = "Analysis"
+    $tab.Text = "AI Research"
     $tab.BackColor = [System.Drawing.Color]::White
 
     $top = New-Object System.Windows.Forms.Panel
@@ -225,6 +225,19 @@ function Add-AnalysisTab {
         & $appendSection     "Valuation Narrative"    $data.valuation_narrative
         & $appendSection     "Competitive Position"   $data.competitive_position
         & $appendSection     "Market Sentiment"       $data.market_sentiment
+
+        # Cost transparency (optional): estimate from the token usage Claude returned.
+        if ($data.PSObject.Properties['usage'] -and $data.usage) {
+            $inTok = 0; $outTok = 0
+            try { $inTok = [int]$data.usage.input_tokens } catch { }
+            try { $outTok = [int]$data.usage.output_tokens } catch { }
+            $mdl = if ($data.PSObject.Properties['model']) { [string]$data.model } else { "" }
+            $inRate = 5.0; $outRate = 25.0   # default: Opus-tier ($ per million tokens)
+            if ($mdl -like "*sonnet*") { $inRate = 3.0; $outRate = 15.0 }
+            elseif ($mdl -like "*haiku*") { $inRate = 1.0; $outRate = 5.0 }
+            $cost = ($inTok * $inRate + $outTok * $outRate) / 1000000.0
+            & $appendBody ("Approx cost: `$" + ("{0:N3}" -f $cost) + "  (" + $inTok + " in / " + $outTok + " out tokens" + $(if ($mdl) { ", " + $mdl } else { "" }) + ")")
+        }
 
         $b.SelectionStart = 0
         $b.ScrollToCaret()

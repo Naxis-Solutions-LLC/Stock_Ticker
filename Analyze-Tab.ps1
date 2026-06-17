@@ -53,7 +53,7 @@ function Add-AnalyzeTab {
 
     # ----------------------------- tab + root layout
     $tab = New-Object System.Windows.Forms.TabPage
-    $tab.Text = "Analyze"
+    $tab.Text = "Chart"
     $tab.BackColor = [System.Drawing.Color]::White
 
     $root = New-Object System.Windows.Forms.TableLayoutPanel
@@ -250,7 +250,7 @@ function Add-AnalyzeTab {
     $sb.ForeColor = [System.Drawing.Color]::DimGray
     $sb.Padding = New-Object System.Windows.Forms.Padding(8, 2, 8, 2)
     $sb.Font = New-Object System.Drawing.Font("Segoe UI", 8)
-    $sb.Text = "(right-click a ticker on the Screen tab, or type one above)"
+    $sb.Text = "Right-click a ticker on the Screen tab, or type one above.  Prices may be delayed/approximate - not investment advice."
     $state.StatusLabel = $sb
     $root.Controls.Add($sb, 0, 2)
 

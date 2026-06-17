@@ -4,14 +4,14 @@ REM  US Stock Screener - UI Launcher
 REM  Double-click this to open the screener window.
 REM ============================================================
 REM
-REM  The console window stays open on purpose: if the UI hits an
-REM  error before the window appears, you'll see it here instead
-REM  of the window just vanishing. Once the UI window is open you
-REM  can minimize this console - just don't close it.
+REM  This black window is a LOG WINDOW. It is safe to minimize. It
+REM  only exists so that if the app hits an error before its window
+REM  appears, you can see (and copy) the message here instead of the
+REM  app just vanishing. You can ignore it once the app is open.
 REM ============================================================
 
 echo Starting US Stock Screener UI...
-echo (Keep this window open while using the app. Minimize it if you like.)
+echo (This is just a log window - safe to minimize.)
 echo.
 
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0StockUI.ps1"

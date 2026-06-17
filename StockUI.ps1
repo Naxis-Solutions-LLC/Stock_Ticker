@@ -76,6 +76,29 @@ $script:PriceJob      = $null
 $script:FullJob       = $null
 $script:LastPriceKick = [datetime]::MinValue
 $script:ScrollDebounceSec = 4
+# UX (v1.5): sort + column-visibility state
+$script:SortColIndex  = -1
+$script:SortAsc       = $true
+$script:ShowAllCols   = $false
+$script:GridCoreFlags = @()
+$script:CohortUseFilters = $false
+
+# Human-readable formatters (display only - the underlying $row values are kept
+# numeric for filtering and sorting).
+function Format-Millions($m) {
+    # $m is a value already expressed in millions (e.g. market cap, dollar volume)
+    try { $v = [double]$m } catch { return "-" }
+    if ($v -ge 1e6) { return "`$" + ("{0:N2}" -f ($v / 1e6)) + "T" }
+    if ($v -ge 1e3) { return "`$" + ("{0:N2}" -f ($v / 1e3)) + "B" }
+    if ($v -ge 1)   { return "`$" + ("{0:N0}" -f $v) + "M" }
+    return "`$" + ("{0:N2}" -f $v) + "M"
+}
+function Format-Shares($k) {
+    # $k is a share count expressed in thousands (e.g. average daily volume)
+    try { $v = [double]$k } catch { return "-" }
+    if ($v -ge 1e3) { return ("{0:N1}" -f ($v / 1e3)) + "M" }
+    return ("{0:N0}" -f $v) + "K"
+}
 
 # Atomic file replace: write a .tmp first, then swap it into place in a single
 # filesystem operation so a reader never sees a half-written file. On Windows
@@ -234,6 +257,48 @@ function Save-Pinned {
 # ============================================================
 # SCREEN TAB - filtering + grid
 # ============================================================
+# Sort key for a screen column index. Numeric columns return a double so they
+# sort numerically (not lexically); text columns return a string.
+function Get-SortKey($row, $colIndex) {
+    switch ($colIndex) {
+        0 { return [string]$row.Ticker }
+        1 { return [double]$row.Price }
+        2 {
+            $tk = ([string]$row.Ticker).ToUpper()
+            if ($script:LivePrices.ContainsKey($tk)) {
+                $lp = $script:LivePrices[$tk].Price
+                if ($lp -ne $null -and $lp -ne "") { return [double]$lp }
+            }
+            return [double]$row.Price
+        }
+        3 { return [double]$row.High52W }
+        4 { return [double]$row.PctBelow }
+        5 { return [double]$row.MarketCapM }
+        6 { if ($row.PSObject.Properties['AvgVolK'])   { return [double]$row.AvgVolK }   else { return 0.0 } }
+        7 { if ($row.PSObject.Properties['AvgDolVolM']){ return [double]$row.AvgDolVolM } else { return 0.0 } }
+        8 { if ($row.PSObject.Properties['Indexes'])   { return [string]$row.Indexes }   else { return "" } }
+        9 { if ($row.PSObject.Properties['AI'])        { return [string]$row.AI }        else { return "" } }
+        10 { if ($row.PSObject.Properties['Uranium'])  { return [string]$row.Uranium }   else { return "" } }
+        11 { if ($row.PSObject.Properties['Chg3moPct']){ return [double]$row.Chg3moPct } else { return 0.0 } }
+        12 { if ($row.PSObject.Properties['Px3moAgo']) { return [double]$row.Px3moAgo }  else { return 0.0 } }
+        13 { if ($row.PSObject.Properties['TrendUp'])  { return [string]$row.TrendUp }   else { return "" } }
+        14 { return [string]$row.DataFlag }
+        default { return [string]$row.Ticker }
+    }
+}
+
+# Show only the core columns by default; the "All columns" checkbox reveals the rest.
+function Set-GridColumns {
+    if (-not $grid -or $grid.Columns.Count -eq 0) { return }
+    for ($i = 0; $i -lt $grid.Columns.Count; $i++) {
+        if ($script:ShowAllCols) {
+            $grid.Columns[$i].Visible = $true
+        } elseif ($i -lt $script:GridCoreFlags.Count) {
+            $grid.Columns[$i].Visible = [bool]$script:GridCoreFlags[$i]
+        }
+    }
+}
+
 function Apply-Filters {
     if (-not $script:AllRows -or $script:AllRows.Count -eq 0) {
         $grid.Rows.Clear()
@@ -289,7 +354,11 @@ function Apply-Filters {
             $otherRows += $row
         }
     }
-    # Pinned first, then filtered rest in original order
+    # Optional user sort (numeric or text by column); pinned rows stay on top.
+    if ($script:SortColIndex -ge 0) {
+        $otherRows = @($otherRows | Sort-Object -Property @{ Expression = { Get-SortKey $_ $script:SortColIndex } } -Descending:(-not $script:SortAsc))
+    }
+    # Pinned first, then the filtered rest
     $ordered = @($pinnedRows) + @($otherRows)
 
     $grid.SuspendLayout()
@@ -301,21 +370,21 @@ function Apply-Filters {
         $livePrice = if ($live) { $live.Price } else { "" }
         $liveUpd   = if ($live) { $live.UpdatedAt } else { "" }
 
-        $cPrice = "{0:N2}" -f [double]$row.Price
-        $cHigh  = "{0:N2}" -f [double]$row.High52W
+        $cPrice = "`$" + ("{0:N2}" -f [double]$row.Price)
+        $cHigh  = "`$" + ("{0:N2}" -f [double]$row.High52W)
         $cPct   = "{0:N1}%" -f [double]$row.PctBelow
-        $cCap   = "{0:N1}" -f [double]$row.MarketCapM
+        $cCap   = Format-Millions $row.MarketCapM
         $cFlag  = [string]$row.DataFlag
         if ($livePrice -ne "" -and $livePrice -ne $null) {
-            $cLive = "{0:N2}" -f [double]$livePrice
+            $cLive = "`$" + ("{0:N2}" -f [double]$livePrice)
         } else {
             $cLive = "-"
         }
         # Show a pin marker on the ticker for pinned rows
         $displayTk = if ($isPinned) { "[*] $tk" } else { $tk }
 
-        $cAvgVol = if ($row.PSObject.Properties['AvgVolK']) { $row.AvgVolK } else { "" }
-        $cDolVol = if ($row.PSObject.Properties['AvgDolVolM']) { $row.AvgDolVolM } else { "" }
+        $cAvgVol = if ($row.PSObject.Properties['AvgVolK']) { Format-Shares $row.AvgVolK } else { "" }
+        $cDolVol = if ($row.PSObject.Properties['AvgDolVolM']) { Format-Millions $row.AvgDolVolM } else { "" }
         # Sector + Industry no longer displayed as grid columns (v1.2.0) -
         # they live in the dropdowns above. The data is still in $row for
         # filtering, just not rendered.
@@ -323,7 +392,7 @@ function Apply-Filters {
         $cAI     = if ($row.PSObject.Properties['AI']) { $row.AI } else { "" }
         $cUran   = if ($row.PSObject.Properties['Uranium']) { $row.Uranium } else { "" }
         $c3mo    = if ($row.PSObject.Properties['Chg3moPct']) { "{0:N1}%" -f [double]$row.Chg3moPct } else { "" }
-        $c3moPx  = if ($row.PSObject.Properties['Px3moAgo']) { "{0:N2}" -f [double]$row.Px3moAgo } else { "" }
+        $c3moPx  = if ($row.PSObject.Properties['Px3moAgo']) { "`$" + ("{0:N2}" -f [double]$row.Px3moAgo) } else { "" }
         $cTrend  = if ($row.PSObject.Properties['TrendUp']) { $row.TrendUp } else { "" }
 
         $idx = $grid.Rows.Add($displayTk, $cPrice, $cLive, $cHigh, $cPct, $cCap,
@@ -341,8 +410,11 @@ function Apply-Filters {
         if ($livePrice -ne "" -and $livePrice -ne $null) {
             $delta = [double]$livePrice - [double]$row.Price
             if ([math]::Abs($delta) -ge 0.01) {
-                $col = if ($delta -gt 0) { $ColGreen } else { $ColRed }
+                $col   = if ($delta -gt 0) { $ColGreen } else { $ColRed }
+                $caret = if ($delta -gt 0) { " ^" } else { " v" }
                 $grid.Rows[$idx].Cells[2].Style.BackColor = $col
+                # Color-independent signal (accessibility): caret on the live cell
+                $grid.Rows[$idx].Cells[2].Value = $cLive + $caret
             }
         }
     }
@@ -392,6 +464,7 @@ function Start-PriceRefresh {
     if ($allTickers.Count -eq 0) { return }
 
     Set-Status "Refreshing live prices for $($allTickers.Count) tickers..."
+    if ($btnRefresh) { $btnRefresh.Enabled = $false; $btnRefresh.Text = "Refreshing..." }
     $argList = @($PriceScript) + $allTickers
     $script:PriceJob = Start-Job -ScriptBlock {
         param($py, $jobArgs)
@@ -428,6 +501,7 @@ function Check-PriceJob {
     Load-LivePrices
     Apply-Filters
     Recompute-Trades
+    if ($btnRefresh) { $btnRefresh.Enabled = $true; $btnRefresh.Text = "Refresh Prices" }
     Set-Status "Live prices updated $(Get-Date -Format 'HH:mm:ss')."
 }
 
@@ -444,7 +518,7 @@ function Start-FullScreen {
         return
     }
     $confirm = [System.Windows.Forms.MessageBox]::Show(
-        "This re-screens ~5,500 US stocks. It takes 25-40 minutes and runs in the background - you can keep using the app. Start now?",
+        "This re-screens ~6,900 US stocks. It takes 25-40 minutes and runs in the background - you can keep using the app. Start now?",
         "Re-run Full Screen",
         [System.Windows.Forms.MessageBoxButtons]::YesNo)
     if ($confirm -ne "Yes") { return }
@@ -681,6 +755,14 @@ function CtxAction-OpenYahoo($ticker) {
 
 function CtxAction-DeleteTradeRow($rowIdx) {
     if ($rowIdx -lt 0 -or $rowIdx -ge $tradesGrid.Rows.Count) { return }
+    $tk = [string]$tradesGrid.Rows[$rowIdx].Cells[0].Value
+    $label = if ([string]::IsNullOrWhiteSpace($tk)) { "this row" } else { "the $tk trade" }
+    $ans = [System.Windows.Forms.MessageBox]::Show(
+        "Delete $label? This cannot be undone.",
+        "Delete trade",
+        [System.Windows.Forms.MessageBoxButtons]::YesNo,
+        [System.Windows.Forms.MessageBoxIcon]::Warning)
+    if ($ans -ne [System.Windows.Forms.DialogResult]::Yes) { return }
     $tradesGrid.Rows.RemoveAt($rowIdx)
     Recompute-Trades
     Save-Trades
@@ -848,8 +930,11 @@ function Recompute-Trades {
             }
         }
         if ($pl -ne $null) {
-            $r.Cells[10].Value = "{0:N2}" -f $pl
-            $r.Cells[11].Value = "{0:P1}" -f $plPct
+            # Color-independent signal (accessibility): sign + caret, not color alone
+            $plArrow = if ($pl -gt 0) { " ^" } elseif ($pl -lt 0) { " v" } else { "" }
+            $plSign  = if ($pl -gt 0) { "+" } else { "" }
+            $r.Cells[10].Value = $plSign + ("{0:N2}" -f $pl) + $plArrow
+            $r.Cells[11].Value = $plSign + ("{0:P1}" -f $plPct) + $plArrow
             $totPL += $pl
             if ($pl -gt 0) { $nWin++ } elseif ($pl -lt 0) { $nLoss++ }
             if ($best  -eq $null -or $pl -gt $best)  { $best  = $pl }
@@ -880,7 +965,7 @@ function Recompute-Trades {
     $worstStr = if ($worst -ne $null) { "`$" + ("{0:N2}" -f $worst) } else { "-" }
 
     $lblScore.Text = @"
-ALGORITHM SCORECARD
+PERFORMANCE
 
 Positions logged:   $nLogged
 Closed trades:      $nClosed
@@ -911,9 +996,25 @@ function Get-CohortData {
     }
     if (-not $script:AllRows -or $script:AllRows.Count -eq 0) { return $result }
 
+    # G2: optionally restrict to rows passing the Screen numeric filters.
+    $useF = $script:CohortUseFilters
+    $minP = 0.0; $maxP = 999999.0; $minC = 0.0; $maxDrop = 100.0
+    if ($useF) {
+        [double]::TryParse($txtMinPrice.Text, [ref]$minP)   | Out-Null
+        [double]::TryParse($txtMaxPrice.Text, [ref]$maxP)   | Out-Null
+        [double]::TryParse($txtMinCap.Text,   [ref]$minC)   | Out-Null
+        [double]::TryParse($txtMaxDrop.Text,  [ref]$maxDrop) | Out-Null
+    }
+
     foreach ($row in $script:AllRows) {
         $p = [double]$row.Price
         $d = [double]$row.PctBelow
+        if ($useF) {
+            $c = [double]$row.MarketCapM
+            if ($p -lt $minP -or $p -gt $maxP) { continue }
+            if ($c -lt $minC) { continue }
+            if ($d -gt $maxDrop) { continue }
+        }
         $entry = @{ Ticker = $row.Ticker; Pct = $d }
         if ($p -lt 25) { $result['$10-25'] += $entry }
         elseif ($p -lt 40) { $result['$25-40'] += $entry }
@@ -1176,6 +1277,18 @@ $chkAIonly.Size = New-Object System.Drawing.Size(170, 20)
 $chkAIonly.Font = New-Object System.Drawing.Font("Segoe UI", 8.5)
 $filterBar.Controls.Add($chkAIonly)
 
+# Column density toggle: off = curated core columns, on = every column.
+$chkAllCols = New-Object System.Windows.Forms.CheckBox
+$chkAllCols.Text = "Show all columns"
+$chkAllCols.Location = New-Object System.Drawing.Point(730, 104)
+$chkAllCols.Size = New-Object System.Drawing.Size(160, 20)
+$chkAllCols.Font = New-Object System.Drawing.Font("Segoe UI", 8.5)
+$filterBar.Controls.Add($chkAllCols)
+$chkAllCols.Add_CheckedChanged({
+    $script:ShowAllCols = $chkAllCols.Checked
+    Set-GridColumns
+})
+
 # --- "More" expander: secondary filters are hidden by default for a calmer bar ---
 $script:FiltersExpanded = $false
 $collapsedH = 64
@@ -1199,6 +1312,7 @@ $lblIndustry.Visible  = $false
 $cmbIndustry.Visible  = $false
 $chkTrendUp.Visible   = $false
 $chkAIonly.Visible    = $false
+$chkAllCols.Visible   = $false
 
 $btnMore.Add_Click({
     $script:FiltersExpanded = -not $script:FiltersExpanded
@@ -1209,6 +1323,7 @@ $btnMore.Add_Click({
     $cmbIndustry.Visible  = $vis
     $chkTrendUp.Visible   = $vis
     $chkAIonly.Visible    = $vis
+    $chkAllCols.Visible   = $vis
     if ($vis) {
         $filterBar.Height = $expandedH
         $btnMore.Text = "Less ^"
@@ -1255,6 +1370,45 @@ $btnExport.BackColor = [System.Drawing.Color]::FromArgb(33,115,70)
 $btnExport.ForeColor = $ColWhite
 $filterBar.Controls.Add($btnExport)
 
+# Find/jump-to-ticker box (serves the "I already know what I want to look at" path)
+$lblFind = New-Object System.Windows.Forms.Label
+$lblFind.Text = "Find:"
+$lblFind.Location = New-Object System.Drawing.Point(936, 36)
+$lblFind.Size = New-Object System.Drawing.Size(34, 18)
+$lblFind.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
+$lblFind.ForeColor = $ColNavy
+$filterBar.Controls.Add($lblFind)
+
+$txtFind = New-Object System.Windows.Forms.TextBox
+$txtFind.Location = New-Object System.Drawing.Point(972, 33)
+$txtFind.Size = New-Object System.Drawing.Size(100, 24)
+$txtFind.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+$txtFind.CharacterCasing = "Upper"
+$filterBar.Controls.Add($txtFind)
+
+# Jump to a ticker in the current view (Enter). If it is not shown, say so.
+$findTicker = {
+    $q = ([string]$txtFind.Text).Trim().ToUpper()
+    if (-not $q) { return }
+    for ($i = 0; $i -lt $grid.Rows.Count; $i++) {
+        $raw = [string]$grid.Rows[$i].Cells[0].Value
+        $clean = ($raw -replace '^\[\*\]\s*', '').Trim().ToUpper()
+        if ($clean -eq $q) {
+            $grid.ClearSelection()
+            $grid.Rows[$i].Selected = $true
+            $grid.CurrentCell = $grid.Rows[$i].Cells[0]
+            try { $grid.FirstDisplayedScrollingRowIndex = $i } catch { }
+            Set-Status "Found $q."
+            return
+        }
+    }
+    Set-Status "$q is not in the current view (adjust filters, or right-click a row to refresh)."
+}
+$txtFind.Add_KeyDown({
+    param($s, $e)
+    if ($e.KeyCode -eq "Return") { $e.SuppressKeyPress = $true; & $findTicker }
+})
+
 # Full Screen: rare + slow, so visually quiet - tucked under Refresh/Export, always visible
 $btnFullScreen = New-Object System.Windows.Forms.Button
 $btnFullScreen.Text = "Re-run Full Screen (slow)"
@@ -1286,9 +1440,9 @@ $progressBar.Visible = $false
 $progressPanel.Controls.Add($progressBar)
 
 $lblProgress = New-Object System.Windows.Forms.Label
-$lblProgress.Text = ""
+$lblProgress.Text = "Tip: right-click a stock for actions (Chart, AI Research, Pin, Send to Trades). Click a column header to sort. Live prices ~15 min delayed."
 $lblProgress.Location = New-Object System.Drawing.Point(328, 6)
-$lblProgress.Size = New-Object System.Drawing.Size(760, 18)
+$lblProgress.Size = New-Object System.Drawing.Size(800, 18)
 $lblProgress.Font = New-Object System.Drawing.Font("Segoe UI", 8.5)
 $progressPanel.Controls.Add($lblProgress)
 
@@ -1321,13 +1475,56 @@ $grid.DefaultCellStyle.SelectionForeColor = [System.Drawing.Color]::Black
 $grid.DefaultCellStyle.Padding = New-Object System.Windows.Forms.Padding(4,0,4,0)
 $grid.AllowUserToResizeRows = $false
 
-foreach ($h in @("Ticker","Price","Live","52W High","% Below","Mkt Cap M","Avg Vol K","`$Vol M","Index","AI","Uran","3mo %","3mo Px","Trend","Flag")) {
+# Columns: friendly headers + tooltips. Core columns show by default; the rest
+# appear when "All columns" is checked (under More). SortMode is Programmatic so
+# header clicks route through our numeric/text sort (see ColumnHeaderMouseClick).
+$gridCols = @(
+    @{H="Ticker";        Core=$true;  Tip="Stock symbol"},
+    @{H="Price";         Core=$true;  Tip="Snapshot price from the last full screen"},
+    @{H="Live";          Core=$true;  Tip="Live price, about 15 min delayed (Yahoo). Green up / pink down vs snapshot."},
+    @{H="52W High";      Core=$true;  Tip="Highest price in the last 52 weeks"},
+    @{H="% Below";       Core=$true;  Tip="Percent below the 52-week high"},
+    @{H="Market Cap";    Core=$true;  Tip="Market capitalization"},
+    @{H="Avg Volume";    Core=$false; Tip="Average daily share volume"},
+    @{H='Avg $ Vol';     Core=$true;  Tip="Average daily dollar volume"},
+    @{H="Index";         Core=$false; Tip="Index membership (S&P 500 / Nasdaq 100 / Dow 30)"},
+    @{H="AI";            Core=$false; Tip="On the curated AI-exposure list"},
+    @{H="Uranium";       Core=$false; Tip="Uranium-related industry"},
+    @{H="3mo Chg";       Core=$false; Tip="Percent change over the last ~3 months"},
+    @{H="Price 3mo ago"; Core=$false; Tip="Closing price ~3 months ago"},
+    @{H="Trend";         Core=$false; Tip="Y if trending up over the last 3 months"},
+    @{H="Flag";          Core=$false; Tip="Data note / deep-drop flag"}
+)
+$script:GridCoreFlags = @($gridCols | ForEach-Object { $_.Core })
+foreach ($c in $gridCols) {
     $col = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $col.HeaderText = $h; $col.Name = $h
+    $col.HeaderText = $c.H
+    $col.Name = $c.H
+    $col.ToolTipText = $c.Tip
+    $col.SortMode = "Programmatic"
     $grid.Columns.Add($col) | Out-Null
 }
+Set-GridColumns
 $tabScreen.Controls.Add($grid)
 $grid.BringToFront()
+
+# Numeric/text column sort on header click (pinned rows stay on top via Apply-Filters).
+$grid.Add_ColumnHeaderMouseClick({
+    param($s, $e)
+    $ci = $e.ColumnIndex
+    if ($ci -lt 0) { return }
+    if ($script:SortColIndex -eq $ci) { $script:SortAsc = -not $script:SortAsc }
+    else { $script:SortColIndex = $ci; $script:SortAsc = $true }
+    for ($i = 0; $i -lt $grid.Columns.Count; $i++) {
+        $grid.Columns[$i].HeaderCell.SortGlyphDirection = [System.Windows.Forms.SortOrder]::None
+    }
+    if ($script:SortAsc) {
+        $grid.Columns[$ci].HeaderCell.SortGlyphDirection = [System.Windows.Forms.SortOrder]::Ascending
+    } else {
+        $grid.Columns[$ci].HeaderCell.SortGlyphDirection = [System.Windows.Forms.SortOrder]::Descending
+    }
+    Apply-Filters
+})
 
 # ---- Screen grid context menu (right-click) ----
 $screenMenu = New-Object System.Windows.Forms.ContextMenuStrip
@@ -1370,30 +1567,30 @@ $miYahoo1.Add_Click({     CtxAction-OpenYahoo     $script:CtxScreenTicker })
 # $script:analyzeApi, which is created later (just before ShowDialog).
 # ============================================================
 $screenMenu.Items.Add("-") | Out-Null  # separator
-$miAnalyze = $screenMenu.Items.Add("Analyze...")
+$miAnalyze = $screenMenu.Items.Add("Chart...")
 $miAnalyze.Add_Click({
     if (-not $script:CtxScreenTicker) { return }
     if (-not $script:analyzeApi)      { return }
     & $script:analyzeApi.AnalyzeTicker $script:CtxScreenTicker
 })
 
-# v1.4.0 - "Ask Claude about {ticker}" - opens the Claude Analysis tab.
-$miAskClaude = $screenMenu.Items.Add("Ask Claude...")
+# "AI research on {ticker}" - opens the Claude-powered AI Research tab.
+$miAskClaude = $screenMenu.Items.Add("AI Research...")
 $miAskClaude.Add_Click({
     if (-not $script:CtxScreenTicker) { return }
     if (-not $script:analysisApi)     { return }
     & $script:analysisApi.AnalyzeTicker $script:CtxScreenTicker
 })
 
-# Update the menu text dynamically when it opens so it reads "Analyze AAPL"
-# rather than a generic label. CellMouseDown already populates $script:CtxScreenTicker.
+# Update the menu text dynamically when it opens so it names the ticker.
+# CellMouseDown already populates $script:CtxScreenTicker.
 $screenMenu.Add_Opening({
     if ($script:CtxScreenTicker) {
-        $miAnalyze.Text = "Analyze $($script:CtxScreenTicker)"
-        $miAskClaude.Text = "Ask Claude about $($script:CtxScreenTicker)"
+        $miAnalyze.Text = "Chart $($script:CtxScreenTicker)"
+        $miAskClaude.Text = "AI research on $($script:CtxScreenTicker)"
     } else {
-        $miAnalyze.Text = "Analyze..."
-        $miAskClaude.Text = "Ask Claude..."
+        $miAnalyze.Text = "Chart..."
+        $miAskClaude.Text = "AI Research..."
     }
 })
 
@@ -1405,7 +1602,7 @@ $tradesTop.Dock = "Top"; $tradesTop.Height = 56; $tradesTop.BackColor = $ColFilt
 $tabTrades.Controls.Add($tradesTop)
 
 $lblTradesHelp = New-Object System.Windows.Forms.Label
-$lblTradesHelp.Text = "Type a Ticker - Buy Date (today) and Buy Price (live) auto-fill. Then just enter Qty. Add Sell Price to close a trade."
+$lblTradesHelp.Text = "Type a Ticker - Buy Date (today) and Buy Price (live) auto-fill. Then just enter Qty. Add Sell Price to close a trade.  Edits save automatically."
 $lblTradesHelp.Location = New-Object System.Drawing.Point(16, 8)
 $lblTradesHelp.Size = New-Object System.Drawing.Size(720, 18)
 $lblTradesHelp.Font = New-Object System.Drawing.Font("Segoe UI", 8.5)
@@ -1426,7 +1623,7 @@ $btnDelTrade.FlatStyle = "Flat"
 $tradesTop.Controls.Add($btnDelTrade)
 
 $btnSaveTrades = New-Object System.Windows.Forms.Button
-$btnSaveTrades.Text = "Save Trades"
+$btnSaveTrades.Text = "Save Now"
 $btnSaveTrades.Location = New-Object System.Drawing.Point(212, 28)
 $btnSaveTrades.Size = New-Object System.Drawing.Size(100, 24)
 $btnSaveTrades.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
@@ -1559,11 +1756,23 @@ $cohortHelp.Dock = "Top"; $cohortHelp.Height = 40; $cohortHelp.BackColor = $ColF
 $tabCohorts.Controls.Add($cohortHelp)
 
 $lblCohortHelp = New-Object System.Windows.Forms.Label
-$lblCohortHelp.Text = "For each price band: the 15 stocks furthest below their 52-week high. Updates after each full screen."
+$lblCohortHelp.Text = "For each price band: the 15 stocks furthest below their 52-week high."
 $lblCohortHelp.Location = New-Object System.Drawing.Point(16, 11)
-$lblCohortHelp.Size = New-Object System.Drawing.Size(950, 18)
+$lblCohortHelp.Size = New-Object System.Drawing.Size(640, 18)
 $lblCohortHelp.Font = New-Object System.Drawing.Font("Segoe UI", 8.5)
 $cohortHelp.Controls.Add($lblCohortHelp)
+
+# G2: optionally restrict cohorts to rows passing the Screen price/cap/drop filters.
+$chkCohortFilter = New-Object System.Windows.Forms.CheckBox
+$chkCohortFilter.Text = "Use current Screen filters"
+$chkCohortFilter.Location = New-Object System.Drawing.Point(664, 9)
+$chkCohortFilter.Size = New-Object System.Drawing.Size(200, 22)
+$chkCohortFilter.Font = New-Object System.Drawing.Font("Segoe UI", 8.5)
+$cohortHelp.Controls.Add($chkCohortFilter)
+$chkCohortFilter.Add_CheckedChanged({
+    $script:CohortUseFilters = $chkCohortFilter.Checked
+    Draw-Cohorts
+})
 
 $cohortPanel = New-Object System.Windows.Forms.Panel
 $cohortPanel.Dock = "Fill"
@@ -1655,8 +1864,7 @@ $chkAIonly.Add_CheckedChanged({ Apply-Filters })
 $btnAddTrade.Add_Click({ $tradesGrid.Rows.Add() | Out-Null })
 $btnDelTrade.Add_Click({
     if ($tradesGrid.CurrentRow -and -not $tradesGrid.CurrentRow.IsNewRow) {
-        $tradesGrid.Rows.Remove($tradesGrid.CurrentRow)
-        Recompute-Trades
+        CtxAction-DeleteTradeRow $tradesGrid.CurrentRow.Index
     }
 })
 $btnSaveTrades.Add_Click({ Save-Trades })
@@ -1700,7 +1908,7 @@ try {
         Load-LivePrices
         Populate-SectorIndustry
         Apply-Filters
-        Set-Status "Loaded $($script:AllRows.Count) stocks. Auto-refresh ON."
+        Set-Status "Showing a saved screen of $($script:AllRows.Count) stocks. $(Get-MetaInfo)  Live prices auto-refresh every 60s."
         Start-PriceRefresh -Force
     } else {
         Set-Status "No screen data yet. Click 'Re-run Full Screen' to build it (25-40 min)."
@@ -1713,17 +1921,18 @@ try {
             $msg = @"
 Welcome to the US Stock Screener.
 
-This is a first-time install with no screened stocks yet.
+There is no screened data yet on this machine.
 
-To build the initial dataset:
+To build the dataset:
   1. Close this dialog
   2. Click the 'Re-run Full Screen (slow)' button at the top
-  3. Wait 25-40 minutes while it screens ~7,000 US stocks
-     (you can keep using the app, the grid stays empty until done)
+  3. It screens ~6,900 US stocks - about 25-40 minutes, in the
+     background (you can keep using the app; the grid fills in when done)
   4. When complete, the grid populates and the Sector/Industry
-     dropdowns will be available under 'More v'
+     filters become available under 'More'
 
-Your test trades and pinned stocks persist between screen runs.
+Tip: the shared package usually ships with a saved screen so you can
+start immediately. Your test trades and pinned stocks persist between runs.
 "@
             [System.Windows.Forms.MessageBox]::Show($msg, "First Launch - Build Screen Data",
                 [System.Windows.Forms.MessageBoxButtons]::OK,
@@ -1777,6 +1986,17 @@ Your test trades and pinned stocks persist between screen runs.
             "Failed to load Analysis tab:`r`n$($_.Exception.Message)",
             "Stock Screener", "OK", "Warning") | Out-Null
     }
+
+    # v1.5 (UX): order tabs to match the workflow - Screen, then the two
+    # understand-a-stock tabs (Chart, AI Research), then Test Trades and Cohorts.
+    try {
+        if ($script:analyzeApi -and $script:analysisApi) {
+            $ordered = @($tabScreen, $script:analyzeApi.Tab, $script:analysisApi.Tab, $tabTrades, $tabCohorts)
+            $tabs.TabPages.Clear()
+            $tabs.TabPages.AddRange($ordered)
+            $tabs.SelectedTab = $tabScreen
+        }
+    } catch { }
 
     [void]$form.ShowDialog()
 }
