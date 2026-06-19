@@ -3,6 +3,15 @@
 All notable changes to the US Stock Screener are recorded here.
 Format loosely follows Keep a Changelog. Dates are when the build was cut.
 
+## [1.6.1] - 2026-06-19
+
+### Fixed
+- **Proxy mode now lets the proxy choose the model.** The client no longer sends a
+  model id to the proxy, so a host with an execution limit (e.g. Wix Velo) can pin
+  a fast model (Haiku) without the desktop app forcing Opus and causing a timeout.
+- **wix-proxy:** added a `get_ping` health-check endpoint and defaulted the Velo
+  proxy to `claude-haiku-4-5` / 1200 tokens for timeout headroom.
+
 ## [1.6.0] - 2026-06-18
 
 ### Added
