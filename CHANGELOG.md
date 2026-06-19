@@ -3,6 +3,15 @@
 All notable changes to the US Stock Screener are recorded here.
 Format loosely follows Keep a Changelog. Dates are when the build was cut.
 
+## [1.6.2] - 2026-06-19
+
+### Changed
+- **Default build now points the AI Research tab at the Wix proxy** by setting
+  `EMBEDDED_PROXY_URL` / `EMBEDDED_APP_TOKEN` in `claude_analysis.py`, so customers
+  need no Anthropic key or setup. The embedded value is the revocable shared app
+  token (not the API key, which stays in Wix Secrets Manager); rotate it by
+  changing `STOCK_APP_TOKEN` in Wix and updating this value.
+
 ## [1.6.1] - 2026-06-19
 
 ### Fixed

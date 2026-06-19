@@ -54,10 +54,14 @@ MAX_TOKENS = 8000
 # Resolution order: --proxy-url / --app-token, then STOCK_PROXY_URL /
 # STOCK_APP_TOKEN env vars, then these embedded defaults. Leave blank to use the
 # direct path (the user's own ANTHROPIC_API_KEY). See wix-proxy/DEPLOY.md.
-# Do NOT commit a real token here - only paste into a distributed build.
+#
+# The token below is the shared APP token (NOT the Anthropic API key - that stays
+# in Wix Secrets Manager). It is revocable: to invalidate it, change STOCK_APP_TOKEN
+# in Wix Secrets Manager and update this value. Keep a monthly spend cap set in the
+# Anthropic Console as a backstop.
 # ----------------------------------------------------------------------------
-EMBEDDED_PROXY_URL = ""
-EMBEDDED_APP_TOKEN = ""
+EMBEDDED_PROXY_URL = "https://administration4683.wixstudio.com/my-site-2/_functions/analyze"
+EMBEDDED_APP_TOKEN = "7tubpxRhe5EzhLgpNBjROMiIgUYWqP8ywveAOvGo8c4ZWDAi"
 
 STRING_FIELDS = [
     "investment_thesis",
