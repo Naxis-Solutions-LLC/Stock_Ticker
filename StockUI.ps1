@@ -126,28 +126,23 @@ function Load-ScreenData {
     }
 }
 
-# Populate the Sector ComboBox from all unique sectors in the loaded data,
-# and the Industry ComboBox from industries that exist within the currently
-# selected sector. The selected sector drives which industries are listed.
-# Both combos have "(All)" as the first item to represent no filter.
-# Preserves the user's existing selections across a re-screen if those values
-# still exist in the new data.
+# Populate the Sector checklist from all unique sectors in the loaded data, and
+# the Industry checklist from industries within the currently-checked sector(s).
+# Both are multi-select: no boxes checked means "no filter" (show all). Checks
+# are preserved across a re-screen when the value still exists in the new data.
 function Populate-SectorIndustry {
-    if (-not $cmbSector -or -not $cmbIndustry) { return }
+    if (-not $clbSector -or -not $clbIndustry) { return }
     if (-not $script:AllRows -or $script:AllRows.Count -eq 0) {
         # Suspend events while we wipe to avoid Apply-Filters firing mid-clear
         $script:SuspendFilterEvents = $true
-        $cmbSector.Items.Clear()
-        $cmbIndustry.Items.Clear()
-        [void]$cmbSector.Items.Add("(All)")
-        [void]$cmbIndustry.Items.Add("(All)")
-        $cmbSector.SelectedIndex = 0
-        $cmbIndustry.SelectedIndex = 0
+        $clbSector.Items.Clear()
+        $clbIndustry.Items.Clear()
         $script:SuspendFilterEvents = $false
         return
     }
-    $prevSec = [string]$cmbSector.SelectedItem
-    $prevInd = [string]$cmbIndustry.SelectedItem
+    # Remember prior checks so they survive a re-screen
+    $prevSec = @($clbSector.CheckedItems | ForEach-Object { [string]$_ })
+    $prevInd = @($clbIndustry.CheckedItems | ForEach-Object { [string]$_ })
 
     $sectors = @()
     foreach ($r in $script:AllRows) {
@@ -156,53 +151,37 @@ function Populate-SectorIndustry {
     $sectors = $sectors | Sort-Object -Unique
 
     $script:SuspendFilterEvents = $true
-    $cmbSector.Items.Clear()
-    [void]$cmbSector.Items.Add("(All)")
-    foreach ($s in $sectors) { [void]$cmbSector.Items.Add($s) }
-    # Restore prior selection if possible, else (All)
-    $newIdx = 0
-    if ($prevSec) {
-        $hit = $cmbSector.Items.IndexOf($prevSec)
-        if ($hit -ge 0) { $newIdx = $hit }
-    }
-    $cmbSector.SelectedIndex = $newIdx
+    $clbSector.Items.Clear()
+    foreach ($s in $sectors) { [void]$clbSector.Items.Add($s, ($prevSec -contains $s)) }
     $script:SuspendFilterEvents = $false
 
-    # Now populate industries based on whichever sector ended up selected
+    # Now populate industries based on whichever sector(s) ended up checked
     Populate-Industries -PreserveSelection $prevInd
 }
 
-# Helper: fill the Industry combo with industries that exist in the data
-# under the currently-selected sector. If sector is "(All)", show all
-# industries. Preserves a passed-in selection if it still exists in the list.
+# Helper: fill the Industry checklist with industries that exist under the
+# checked sector(s). If no sector is checked, show all industries. Re-checks any
+# passed-in selections that still apply.
 function Populate-Industries {
-    param([string]$PreserveSelection = "")
-    if (-not $cmbIndustry) { return }
+    param($PreserveSelection = @())
+    if (-not $clbIndustry) { return }
     if (-not $script:AllRows) { return }
 
-    $selectedSector = [string]$cmbSector.SelectedItem
+    $checkedSectors = @($clbSector.CheckedItems | ForEach-Object { [string]$_ })
     $industries = @()
     foreach ($r in $script:AllRows) {
         if (-not $r.PSObject.Properties['Industry'] -or -not $r.Industry) { continue }
-        if ($selectedSector -and $selectedSector -ne "(All)") {
+        if ($checkedSectors.Count -gt 0) {
             if (-not $r.PSObject.Properties['Sector']) { continue }
-            if ([string]$r.Sector -ne $selectedSector) { continue }
+            if (-not ($checkedSectors -contains [string]$r.Sector)) { continue }
         }
         $industries += [string]$r.Industry
     }
     $industries = $industries | Sort-Object -Unique
 
     $script:SuspendFilterEvents = $true
-    $cmbIndustry.Items.Clear()
-    [void]$cmbIndustry.Items.Add("(All)")
-    foreach ($s in $industries) { [void]$cmbIndustry.Items.Add($s) }
-    # Try to keep the user's previous industry selection if it still applies
-    $newIdx = 0
-    if ($PreserveSelection) {
-        $hit = $cmbIndustry.Items.IndexOf($PreserveSelection)
-        if ($hit -ge 0) { $newIdx = $hit }
-    }
-    $cmbIndustry.SelectedIndex = $newIdx
+    $clbIndustry.Items.Clear()
+    foreach ($s in $industries) { [void]$clbIndustry.Items.Add($s, ($PreserveSelection -contains $s)) }
     $script:SuspendFilterEvents = $false
 }
 
@@ -310,17 +289,11 @@ function Apply-Filters {
     $maxP = 999999.0; [double]::TryParse($txtMaxPrice.Text, [ref]$maxP)  | Out-Null
     $minC = 0.0;      [double]::TryParse($txtMinCap.Text,   [ref]$minC)  | Out-Null
     $maxDrop = 100.0; [double]::TryParse($txtMaxDrop.Text,  [ref]$maxDrop)| Out-Null
-    # Single-select dropdowns: empty string or "(All)" means no filter
-    $sectorPick = ""
-    if ($cmbSector -and $cmbSector.SelectedItem) {
-        $val = [string]$cmbSector.SelectedItem
-        if ($val -and $val -ne "(All)") { $sectorPick = $val }
-    }
-    $industryPick = ""
-    if ($cmbIndustry -and $cmbIndustry.SelectedItem) {
-        $val = [string]$cmbIndustry.SelectedItem
-        if ($val -and $val -ne "(All)") { $industryPick = $val }
-    }
+    # Multi-select sector/industry: collect checked items. Empty = no filter.
+    $sectorPicks = @()
+    if ($clbSector) { $sectorPicks = @($clbSector.CheckedItems | ForEach-Object { [string]$_ }) }
+    $industryPicks = @()
+    if ($clbIndustry) { $industryPicks = @($clbIndustry.CheckedItems | ForEach-Object { [string]$_ }) }
     $trendOnly = ($chkTrendUp -and $chkTrendUp.Checked)
     $aiOnly    = ($chkAIonly -and $chkAIonly.Checked)
 
@@ -338,12 +311,12 @@ function Apply-Filters {
             if ($p -lt $minP -or $p -gt $maxP) { continue }
             if ($c -lt $minC) { continue }
             if ($d -gt $maxDrop) { continue }
-            # New tag-based filters (only applied if the column exists)
-            if ($sectorPick -and $row.PSObject.Properties['Sector']) {
-                if ([string]$row.Sector -ne $sectorPick) { continue }
+            # Multi-select tag filters (only applied if the column exists)
+            if ($sectorPicks.Count -gt 0 -and $row.PSObject.Properties['Sector']) {
+                if (-not ($sectorPicks -contains [string]$row.Sector)) { continue }
             }
-            if ($industryPick -and $row.PSObject.Properties['Industry']) {
-                if ([string]$row.Industry -ne $industryPick) { continue }
+            if ($industryPicks.Count -gt 0 -and $row.PSObject.Properties['Industry']) {
+                if (-not ($industryPicks -contains [string]$row.Industry)) { continue }
             }
             if ($trendOnly -and $row.PSObject.Properties['TrendUp']) {
                 if ([string]$row.TrendUp -ne "Y") { continue }
@@ -1220,43 +1193,42 @@ $txtMinCap = New-FilterBox $filterBar 224 "500"
 New-FilterLabel $filterBar "Max % Below High" 328
 $txtMaxDrop = New-FilterBox $filterBar 328 "70"
 
-# Second filter row: Sector + Industry dropdowns (single-select, with (All) to clear).
-# The Industry dropdown is filtered to industries that exist in the selected sector.
+# Second filter row: Sector + Industry multi-select checklists. Check any number
+# of boxes; none checked means no filter (show all). Industry is scoped to the
+# checked sector(s).
 $lblSector = New-Object System.Windows.Forms.Label
-$lblSector.Text = "Sector"
+$lblSector.Text = "Sector (check any; none = all)"
 $lblSector.Location = New-Object System.Drawing.Point(16, 60)
-$lblSector.Size = New-Object System.Drawing.Size(180, 18)
+$lblSector.Size = New-Object System.Drawing.Size(220, 18)
 $lblSector.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
 $lblSector.ForeColor = $ColNavy
 $filterBar.Controls.Add($lblSector)
 
-$cmbSector = New-Object System.Windows.Forms.ComboBox
-$cmbSector.Location = New-Object System.Drawing.Point(16, 80)
-$cmbSector.Size = New-Object System.Drawing.Size(220, 24)
-$cmbSector.DropDownStyle = "DropDownList"   # read-only list (no free text)
-$cmbSector.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-$cmbSector.FlatStyle = "Flat"
-[void]$cmbSector.Items.Add("(All)")
-$cmbSector.SelectedIndex = 0
-$filterBar.Controls.Add($cmbSector)
+$clbSector = New-Object System.Windows.Forms.CheckedListBox
+$clbSector.Location = New-Object System.Drawing.Point(16, 80)
+$clbSector.Size = New-Object System.Drawing.Size(220, 78)
+$clbSector.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+$clbSector.CheckOnClick = $true
+$clbSector.IntegralHeight = $false
+$clbSector.BorderStyle = "FixedSingle"
+$filterBar.Controls.Add($clbSector)
 
 $lblIndustry = New-Object System.Windows.Forms.Label
-$lblIndustry.Text = "Industry"
+$lblIndustry.Text = "Industry (check any; none = all)"
 $lblIndustry.Location = New-Object System.Drawing.Point(248, 60)
-$lblIndustry.Size = New-Object System.Drawing.Size(180, 18)
+$lblIndustry.Size = New-Object System.Drawing.Size(280, 18)
 $lblIndustry.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
 $lblIndustry.ForeColor = $ColNavy
 $filterBar.Controls.Add($lblIndustry)
 
-$cmbIndustry = New-Object System.Windows.Forms.ComboBox
-$cmbIndustry.Location = New-Object System.Drawing.Point(248, 80)
-$cmbIndustry.Size = New-Object System.Drawing.Size(280, 24)
-$cmbIndustry.DropDownStyle = "DropDownList"
-$cmbIndustry.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-$cmbIndustry.FlatStyle = "Flat"
-[void]$cmbIndustry.Items.Add("(All)")
-$cmbIndustry.SelectedIndex = 0
-$filterBar.Controls.Add($cmbIndustry)
+$clbIndustry = New-Object System.Windows.Forms.CheckedListBox
+$clbIndustry.Location = New-Object System.Drawing.Point(248, 80)
+$clbIndustry.Size = New-Object System.Drawing.Size(280, 78)
+$clbIndustry.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+$clbIndustry.CheckOnClick = $true
+$clbIndustry.IntegralHeight = $false
+$clbIndustry.BorderStyle = "FixedSingle"
+$filterBar.Controls.Add($clbIndustry)
 
 # Flag that lets Populate-SectorIndustry suspend the SelectedIndexChanged
 # handler while it's rebuilding the lists - otherwise Apply-Filters would
@@ -1292,7 +1264,7 @@ $chkAllCols.Add_CheckedChanged({
 # --- "More" expander: secondary filters are hidden by default for a calmer bar ---
 $script:FiltersExpanded = $false
 $collapsedH = 64
-$expandedH  = 140   # smaller now that listboxes are gone
+$expandedH  = 170   # taller to fit the Sector/Industry multi-select checklists
 $filterBar.Height = $collapsedH
 
 $btnMore = New-Object System.Windows.Forms.Button
@@ -1307,9 +1279,9 @@ $filterBar.Controls.Add($btnMore)
 
 # The secondary controls start hidden
 $lblSector.Visible    = $false
-$cmbSector.Visible    = $false
+$clbSector.Visible    = $false
 $lblIndustry.Visible  = $false
-$cmbIndustry.Visible  = $false
+$clbIndustry.Visible  = $false
 $chkTrendUp.Visible   = $false
 $chkAIonly.Visible    = $false
 $chkAllCols.Visible   = $false
@@ -1318,9 +1290,9 @@ $btnMore.Add_Click({
     $script:FiltersExpanded = -not $script:FiltersExpanded
     $vis = $script:FiltersExpanded
     $lblSector.Visible    = $vis
-    $cmbSector.Visible    = $vis
+    $clbSector.Visible    = $vis
     $lblIndustry.Visible  = $vis
-    $cmbIndustry.Visible  = $vis
+    $clbIndustry.Visible  = $vis
     $chkTrendUp.Visible   = $vis
     $chkAIonly.Visible    = $vis
     $chkAllCols.Visible   = $vis
@@ -1840,18 +1812,17 @@ $txtMaxPrice.Add_KeyDown($enterApply)
 $txtMinCap.Add_KeyDown($enterApply)
 $txtMaxDrop.Add_KeyDown($enterApply)
 
-# When the user picks a different sector, repopulate the industry dropdown
-# with industries that exist within that sector. The (All) sector option
-# shows every industry. The SuspendFilterEvents flag prevents this from
-# firing during Populate-SectorIndustry's own internal rebuilds.
-$cmbSector.Add_SelectedIndexChanged({
+# When sector checks change, rescope the Industry checklist and re-filter. When
+# industry checks change, just re-filter. ItemCheck fires BEFORE the check state
+# is committed, so we defer the work with BeginInvoke until it has applied. The
+# SuspendFilterEvents flag prevents firing during the lists' own rebuilds.
+$clbSector.Add_ItemCheck({
     if ($script:SuspendFilterEvents) { return }
-    Populate-Industries
-    Apply-Filters
+    $clbSector.BeginInvoke([Action]{ Populate-Industries; Apply-Filters }) | Out-Null
 })
-$cmbIndustry.Add_SelectedIndexChanged({
+$clbIndustry.Add_ItemCheck({
     if ($script:SuspendFilterEvents) { return }
-    Apply-Filters
+    $clbIndustry.BeginInvoke([Action]{ Apply-Filters }) | Out-Null
 })
 
 $chkTrendUp.Add_CheckedChanged({ Apply-Filters })

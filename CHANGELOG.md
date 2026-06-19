@@ -3,6 +3,15 @@
 All notable changes to the US Stock Screener are recorded here.
 Format loosely follows Keep a Changelog. Dates are when the build was cut.
 
+## [1.5.1] - 2026-06-17
+
+### Changed
+- **Sector and Industry filters are now multi-select.** The two single-select
+  dropdowns are replaced with checklists (CheckedListBox) - check any number of
+  sectors and/or industries; checking none means "no filter" (show all). The
+  Industry list is scoped to the checked sector(s), and checks are preserved
+  across a full re-screen. The More panel is a little taller to fit the lists.
+
 ## [1.5.0] - 2026-06-17
 
 UX pass implementing the findings in docs/UX_REVIEW.md (P0 -> P2). Additive;
