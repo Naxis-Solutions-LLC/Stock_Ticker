@@ -1,31 +1,25 @@
 // http-functions.js  --  Wix Velo proxy for the US Stock Screener "AI Research" tab
 // =============================================================================
-// Purpose: keep the Anthropic API key on the server (Wix Secrets Manager) instead
-// of shipping it to customers. The desktop app calls:
+// Put this file in your site's backend, named EXACTLY  backend/http-functions.js
+// (Backend & Public -> Backend). It exposes:
+//   GET  https://<your-site>/_functions/ping     -> {"ok":true}  (health check)
+//   POST https://<your-site>/_functions/analyze  -> 7-field research JSON
 //
-//     POST https://<your-site>/_functions/analyze
-//     header:  x-app-token: <the shared app token>
-//     body:    {"ticker":"AAPL","sector":"...","price":"...","market_cap":"...","model":"..."}
-//
-// and gets back the same 7-field JSON the app already renders.
-//
-// DEPLOY: this file goes in your site's backend as  backend/http-functions.js
-// (Wix Editor -> Dev Mode on -> Backend -> http-functions.js). See DEPLOY.md.
-//
-// Secrets Manager must contain two secrets:
+// Secrets Manager must contain two secrets (Developer Tools -> Secrets Manager):
 //   ANTHROPIC_API_KEY  - your Anthropic key (sk-ant-...)
-//   STOCK_APP_TOKEN    - any long random string; the app must send the same value
+//   STOCK_APP_TOKEN    - any long random string; the app sends the same value
+//
+// Velo HTTP functions have a short execution limit, so this is tuned for speed
+// (Haiku, small token cap, no extended thinking). If calls still time out, the
+// proxy belongs on a host without that limit (e.g. a Cloudflare Worker).
 // =============================================================================
 
 import { ok, badRequest, forbidden, serverError } from 'wix-http-functions';
 import { getSecret } from 'wix-secrets-backend';
 import { fetch } from 'wix-fetch';
 
-// Velo HTTP functions have a short execution limit, so keep the call fast:
-// no extended thinking and a modest token cap. Switch MODEL to 'claude-sonnet-4-6'
-// if you hit timeouts or want lower cost.
-const MODEL = 'claude-opus-4-8';
-const MAX_TOKENS = 2000;
+const MODEL = 'claude-haiku-4-5';
+const MAX_TOKENS = 1200;
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
 
@@ -85,6 +79,11 @@ function buildUserPrompt(ticker, payload) {
         'investment_thesis, fundamental_strengths, key_risks, near_term_catalysts, ' +
         'valuation_narrative, competitive_position, market_sentiment.');
     return lines.join('\n');
+}
+
+// Health check: GET /_functions/ping -> {"ok":true}
+export function get_ping(request) {
+    return jsonResponse(ok, { ok: true });
 }
 
 export async function post_analyze(request) {
