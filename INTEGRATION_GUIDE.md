@@ -175,6 +175,24 @@ to raise it).
 
 ---
 
+## 5b. Optional: proxy mode (don't ship your key to customers)
+
+If you want customers to use the AI Research tab on *your* Anthropic key without
+that key living on their machines, run a small proxy that holds the key
+server-side. The app then calls your proxy with a revocable token instead of
+calling Anthropic directly.
+
+A ready-to-deploy Wix Velo implementation is in `wix-proxy/` (`http-functions.js`
++ `DEPLOY.md`). In short: store `ANTHROPIC_API_KEY` and a `STOCK_APP_TOKEN` in Wix
+Secrets Manager, publish the function, then point the app at it with either:
+
+    setx STOCK_PROXY_URL "https://<your-site>/_functions/analyze"
+    setx STOCK_APP_TOKEN "<your STOCK_APP_TOKEN>"
+
+or by setting `EMBEDDED_PROXY_URL` / `EMBEDDED_APP_TOKEN` at the top of
+`claude_analysis.py` in the build you distribute. With no proxy configured, the app
+uses the direct path described above. See `wix-proxy/DEPLOY.md` for full steps.
+
 ## 6. Security - never commit keys
 
 - The key lives ONLY in the `ANTHROPIC_API_KEY` environment variable. It is never

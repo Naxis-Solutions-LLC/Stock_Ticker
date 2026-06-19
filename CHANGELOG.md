@@ -3,6 +3,20 @@
 All notable changes to the US Stock Screener are recorded here.
 Format loosely follows Keep a Changelog. Dates are when the build was cut.
 
+## [1.6.0] - 2026-06-18
+
+### Added
+- **Optional proxy mode for AI Research** so the Anthropic API key never has to
+  ship to customers. When a proxy URL is configured (`--proxy-url`, the
+  `STOCK_PROXY_URL` env var, or an embedded default), `claude_analysis.py` calls
+  your server-side proxy with a revocable `x-app-token` instead of calling
+  Anthropic directly. Falls back to the original direct/env-key path when no proxy
+  is set, so nothing breaks for users who bring their own key.
+- **`wix-proxy/`** - a ready-to-deploy Wix Velo implementation: `http-functions.js`
+  (validates the app token, reads the key from Wix Secrets Manager, calls Claude,
+  returns the same 7-field JSON) plus `DEPLOY.md` (step-by-step setup, testing,
+  cost/kill-switch notes, and the Velo timeout caveat).
+
 ## [1.5.2] - 2026-06-18
 
 ### Fixed

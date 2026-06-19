@@ -47,6 +47,18 @@ import datetime
 MODEL = "claude-opus-4-8"
 MAX_TOKENS = 8000
 
+# ----------------------------------------------------------------------------
+# Optional PROXY mode. If a proxy URL is configured, the app calls your proxy
+# (e.g. the Wix Velo function in wix-proxy/) instead of Anthropic directly, so the
+# Anthropic API key never ships to customers - only a revocable app token does.
+# Resolution order: --proxy-url / --app-token, then STOCK_PROXY_URL /
+# STOCK_APP_TOKEN env vars, then these embedded defaults. Leave blank to use the
+# direct path (the user's own ANTHROPIC_API_KEY). See wix-proxy/DEPLOY.md.
+# Do NOT commit a real token here - only paste into a distributed build.
+# ----------------------------------------------------------------------------
+EMBEDDED_PROXY_URL = ""
+EMBEDDED_APP_TOKEN = ""
+
 STRING_FIELDS = [
     "investment_thesis",
     "near_term_catalysts",
@@ -122,6 +134,10 @@ def parse_args():
     p.add_argument("--model", default=MODEL, help="Override the Claude model id.")
     p.add_argument("--max-tokens", dest="max_tokens", type=int, default=MAX_TOKENS,
                    help="Max response tokens.")
+    p.add_argument("--proxy-url", dest="proxy_url", default="",
+                   help="If set, call this proxy endpoint instead of Anthropic directly.")
+    p.add_argument("--app-token", dest="app_token", default="",
+                   help="Shared token sent to the proxy (x-app-token header).")
     return p.parse_args()
 
 
@@ -245,6 +261,53 @@ def run_analysis(anthropic, args):
     return out
 
 
+def run_via_proxy(proxy_url, app_token, args):
+    """Call the server-side proxy instead of Anthropic. Returns the 7-field dict
+    (the proxy returns the same shape) or a clean error_obj. No Anthropic key or
+    SDK is needed on this machine."""
+    try:
+        import requests
+    except ImportError:
+        return error_obj(
+            "The 'requests' package is not installed.",
+            hint="Run: pip install requests")
+
+    payload = {"ticker": args.ticker.upper()}
+    if args.price:      payload["price"] = args.price
+    if args.sector:     payload["sector"] = args.sector
+    if args.market_cap: payload["market_cap"] = args.market_cap
+    if args.model:      payload["model"] = args.model
+
+    headers = {"Content-Type": "application/json"}
+    if app_token:
+        headers["x-app-token"] = app_token
+
+    try:
+        r = requests.post(proxy_url, json=payload, headers=headers, timeout=120)
+    except Exception as e:
+        return error_obj(
+            "Could not reach the analysis proxy.",
+            hint="Check STOCK_PROXY_URL and your network connection.",
+            raw=str(e))
+
+    try:
+        data = r.json()
+    except Exception:
+        return error_obj(
+            "The proxy did not return JSON (status " + str(r.status_code) + ").",
+            hint="Check the proxy URL and that the Wix function is published.",
+            raw=(r.text or "")[:2000])
+
+    # If the proxy already returned a structured error, pass it through.
+    if isinstance(data, dict) and data.get("error"):
+        return data
+    if r.status_code >= 400:
+        return error_obj(
+            "Proxy returned an error (status " + str(r.status_code) + ").",
+            raw=json.dumps(data)[:2000])
+    return data
+
+
 def finish(obj, output_path, exit_code):
     """Write the JSON object (atomically) to the output path or stdout, then exit."""
     text = json.dumps(obj, indent=2)
@@ -264,6 +327,14 @@ def finish(obj, output_path, exit_code):
 
 def main():
     args = parse_args()
+
+    # Proxy mode takes precedence if configured (no Anthropic key needed locally).
+    proxy_url = args.proxy_url or os.environ.get("STOCK_PROXY_URL", "") or EMBEDDED_PROXY_URL
+    app_token = args.app_token or os.environ.get("STOCK_APP_TOKEN", "") or EMBEDDED_APP_TOKEN
+    if proxy_url:
+        result = run_via_proxy(proxy_url, app_token, args)
+        finish(result, args.output, 1 if (isinstance(result, dict) and result.get("error")) else 0)
+        return
 
     if not os.environ.get("ANTHROPIC_API_KEY"):
         finish(error_obj(
