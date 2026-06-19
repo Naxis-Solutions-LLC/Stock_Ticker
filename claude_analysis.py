@@ -276,7 +276,8 @@ def run_via_proxy(proxy_url, app_token, args):
     if args.price:      payload["price"] = args.price
     if args.sector:     payload["sector"] = args.sector
     if args.market_cap: payload["market_cap"] = args.market_cap
-    if args.model:      payload["model"] = args.model
+    # Note: model is intentionally NOT sent - the proxy owner controls which model
+    # runs (e.g. a fast model to stay under a host's execution limit).
 
     headers = {"Content-Type": "application/json"}
     if app_token:
