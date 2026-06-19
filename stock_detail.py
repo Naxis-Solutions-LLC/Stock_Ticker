@@ -322,6 +322,11 @@ def fetch_ticker_data(ticker):
     status(f"Writing {ticker}: history CSV")
     hist_rows = []
     for idx, row in one_year.iterrows():
+        # Skip no-trade days with missing OHLC - writing "nan" here would crash
+        # the chart renderer (it casts these cells to double).
+        if (pd.isna(row["Open"]) or pd.isna(row["High"])
+                or pd.isna(row["Low"]) or pd.isna(row["Close"])):
+            continue
         hist_rows.append([
             idx.strftime("%Y-%m-%d"),
             round(float(row["Open"]),4),

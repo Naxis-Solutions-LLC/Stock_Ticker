@@ -3,6 +3,17 @@
 All notable changes to the US Stock Screener are recorded here.
 Format loosely follows Keep a Changelog. Dates are when the build was cut.
 
+## [1.5.2] - 2026-06-18
+
+### Fixed
+- **Chart tab crash ("Cannot convert value 'nan' to type System.Double").** Thinly
+  traded names (e.g. UEC) can have no-trade days with NaN OHLC, which were written
+  to detail_history.csv as the string "nan" and crashed the price chart's double
+  casts. Two-part fix: (1) the chart now drops rows whose OHLC/Volume are
+  non-numeric before drawing (and SMA points are guarded the same way), so a stray
+  value can never crash it; (2) stock_detail.py no longer emits those rows -
+  no-trade days with missing OHLC are skipped when writing history.
+
 ## [1.5.1] - 2026-06-17
 
 ### Changed

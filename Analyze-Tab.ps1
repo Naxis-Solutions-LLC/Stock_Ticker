@@ -570,6 +570,14 @@ function _Az_GetPeriodSlice {
     return $History
 }
 
+# True only if the value parses as a finite number. Guards against "nan"/""/null
+# in history rows (thinly-traded names can have NaN OHLC on no-trade days), which
+# would otherwise crash [double] casts in the chart drawing.
+function _Az_IsNum($v) {
+    $d = 0.0
+    return [double]::TryParse([string]$v, [ref]$d)
+}
+
 function _Az_DrawPriceChart {
     param([System.Drawing.Graphics]$Graphics,
         [System.Drawing.Rectangle]$Bounds,
@@ -582,6 +590,19 @@ function _Az_DrawPriceChart {
     if (-not $rows -or $rows.Count -lt 2) {
         $f = New-Object System.Drawing.Font("Segoe UI", 10)
         $Graphics.DrawString("(no data -- analyze a ticker to begin)",
+            $f, [System.Drawing.Brushes]::DimGray, 20, 20)
+        $f.Dispose()
+        return
+    }
+
+    # Drop rows with non-numeric OHLC (e.g. "nan" on no-trade days) so a stray
+    # value can never crash the chart.
+    $rows = @($rows | Where-Object {
+        (_Az_IsNum $_.Open) -and (_Az_IsNum $_.High) -and (_Az_IsNum $_.Low) -and (_Az_IsNum $_.Close)
+    })
+    if ($rows.Count -lt 2) {
+        $f = New-Object System.Drawing.Font("Segoe UI", 10)
+        $Graphics.DrawString("(no chartable price data for this period)",
             $f, [System.Drawing.Brushes]::DimGray, 20, 20)
         $f.Dispose()
         return
@@ -649,7 +670,7 @@ function _Az_DrawPriceChart {
         [System.Drawing.Color]::FromArgb(255, 140, 0), 1.5)
     $sma50Pts = New-Object 'System.Collections.Generic.List[System.Drawing.PointF]'
     for ($i = 0; $i -lt $nRows; $i++) {
-        if ($rows[$i].SMA50) {
+        if (_Az_IsNum $rows[$i].SMA50) {
             $v = [double]$rows[$i].SMA50
             $sma50Pts.Add((New-Object System.Drawing.PointF(
                         ([float](& $XAt $i)), ([float](& $YAt $v)))))
@@ -662,7 +683,7 @@ function _Az_DrawPriceChart {
         [System.Drawing.Color]::FromArgb(204, 0, 0), 1.5)
     $sma200Pts = New-Object 'System.Collections.Generic.List[System.Drawing.PointF]'
     for ($i = 0; $i -lt $nRows; $i++) {
-        if ($rows[$i].SMA200) {
+        if (_Az_IsNum $rows[$i].SMA200) {
             $v = [double]$rows[$i].SMA200
             $sma200Pts.Add((New-Object System.Drawing.PointF(
                         ([float](& $XAt $i)), ([float](& $YAt $v)))))
@@ -698,6 +719,8 @@ function _Az_DrawVolumeChart {
     $Graphics.Clear([System.Drawing.Color]::White)
     $rows = _Az_GetPeriodSlice -History $State.History -Period $State.Period
     if (-not $rows -or $rows.Count -lt 2) { return }
+    $rows = @($rows | Where-Object { _Az_IsNum $_.Volume })
+    if ($rows.Count -lt 2) { return }
 
     $padL = 56; $padR = 12; $padT = 8; $padB = 18
     $w = $Bounds.Width - $padL - $padR
